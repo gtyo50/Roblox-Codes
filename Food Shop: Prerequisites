@@ -1,0 +1,19 @@
+ReplicatedStorage
+
+RemoteEvent named BuyFood
+
+ServerStorage
+
+Folder named FoodItems
+Put 10 Tool food items inside it with these exact names:
+Apple
+Banana
+Burger
+Pizza
+Taco
+Donut
+Hotdog
+Fries
+Cake
+Soda
+... what ever else (make sure you add it to the list)
