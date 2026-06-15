@@ -1,0 +1,54 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
+
+local remote = ReplicatedStorage:WaitForChild("AdminCommand")
+
+local admins = {
+	[123456789] = true,
+}
+
+local function isAdmin(player)
+	return admins[player.UserId] == true
+end
+
+remote.OnServerEvent:Connect(function(player, command, targetName, value)
+	if not isAdmin(player) then
+		player:Kick("Unauthorized admin command.")
+		return
+	end
+
+	local target = Players:FindFirstChild(targetName)
+
+	if command == "Kick" then
+		if target then
+			target:Kick(value ~= "" and value or "Kicked by admin.")
+		end
+
+	elseif command == "TeleportToPlayer" then
+		if target and player.Character and target.Character then
+			local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+			local targetHrp = target.Character:FindFirstChild("HumanoidRootPart")
+
+			if hrp and targetHrp then
+				hrp.CFrame = targetHrp.CFrame + Vector3.new(3, 0, 0)
+			end
+		end
+
+	elseif command == "SetLevel" then
+		if target and target:FindFirstChild("leaderstats") then
+			local level = target.leaderstats:FindFirstChild("Level")
+			if level then
+				level.Value = tonumber(value) or level.Value
+			end
+		end
+
+	elseif command == "GiveItem" then
+		if target then
+			local item = ServerStorage:FindFirstChild(value)
+			if item then
+				item:Clone().Parent = target.Backpack
+			end
+		end
+	end
+end)
