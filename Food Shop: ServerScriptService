@@ -1,0 +1,39 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+
+local buyFood = ReplicatedStorage:WaitForChild("BuyFood")
+local foodFolder = ServerStorage:WaitForChild("FoodItems")
+
+local foods = {
+	Apple = 25,
+	Banana = 30,
+	Burger = 75,
+	Pizza = 100,
+	Taco = 80,
+	Donut = 50,
+	Hotdog = 70,
+	Fries = 60,
+	Cake = 150,
+	Soda = 40
+}
+
+buyFood.OnServerEvent:Connect(function(player, foodName)
+	local price = foods[foodName]
+	if not price then return end
+
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if not leaderstats then return end
+
+	local coins = leaderstats:FindFirstChild("Coins")
+	if not coins then return end
+
+	if coins.Value < price then return end
+
+	local foodTool = foodFolder:FindFirstChild(foodName)
+	if not foodTool then return end
+
+	coins.Value -= price
+
+	local clone = foodTool:Clone()
+	clone.Parent = player.Backpack
+end)
