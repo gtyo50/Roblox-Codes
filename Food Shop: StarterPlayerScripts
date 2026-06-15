@@ -1,0 +1,75 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local buyFood = ReplicatedStorage:WaitForChild("BuyFood")
+
+local foods = {
+	{"Apple", 25},
+	{"Banana", 30},
+	{"Burger", 75},
+	{"Pizza", 100},
+	{"Taco", 80},
+	{"Donut", 50},
+	{"Hotdog", 70},
+	{"Fries", 60},
+	{"Cake", 150},
+	{"Soda", 40}
+}
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "FoodShopGui"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local openButton = Instance.new("TextButton")
+openButton.Size = UDim2.new(0, 120, 0, 40)
+openButton.Position = UDim2.new(0, 20, 0, 70)
+openButton.Text = "Food Shop"
+openButton.TextScaled = true
+openButton.Parent = gui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 350, 0, 430)
+frame.Position = UDim2.new(0.5, -175, 0.5, -215)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+frame.Visible = false
+frame.Parent = gui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 45)
+title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+title.Text = "Food Shop"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextScaled = true
+title.Parent = frame
+
+local list = Instance.new("ScrollingFrame")
+list.Size = UDim2.new(1, -20, 1, -60)
+list.Position = UDim2.new(0, 10, 0, 50)
+list.CanvasSize = UDim2.new(0, 0, 0, #foods * 45)
+list.ScrollBarThickness = 6
+list.BackgroundTransparency = 1
+list.Parent = frame
+
+for i, food in ipairs(foods) do
+	local foodName = food[1]
+	local price = food[2]
+
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1, -5, 0, 40)
+	button.Position = UDim2.new(0, 0, 0, (i - 1) * 45)
+	button.Text = foodName .. " - " .. price .. " Coins"
+	button.TextScaled = true
+	button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Parent = list
+
+	button.MouseButton1Click:Connect(function()
+		buyFood:FireServer(foodName)
+	end)
+end
+
+openButton.MouseButton1Click:Connect(function()
+	frame.Visible = not frame.Visible
+end)
