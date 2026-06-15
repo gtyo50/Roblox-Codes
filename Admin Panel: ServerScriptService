@@ -5,7 +5,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local remote = ReplicatedStorage:WaitForChild("AdminCommand")
 
 local admins = {
-	[123456789] = true,
+	[123456789] = true, //Replace 123456789 with your Roblox UserId.
 }
 
 local function isAdmin(player)
