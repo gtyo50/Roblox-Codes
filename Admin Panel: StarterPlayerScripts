@@ -1,0 +1,74 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local remote = ReplicatedStorage:WaitForChild("AdminCommand")
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "AdminPanel"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 300, 0, 260)
+frame.Position = UDim2.new(0, 20, 0.5, -130)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+frame.Visible = false
+frame.Parent = gui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 35)
+title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+title.Text = "Admin Panel"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextScaled = true
+title.Parent = frame
+
+local targetBox = Instance.new("TextBox")
+targetBox.Size = UDim2.new(1, -20, 0, 35)
+targetBox.Position = UDim2.new(0, 10, 0, 50)
+targetBox.PlaceholderText = "Target player name"
+targetBox.Text = ""
+targetBox.TextScaled = true
+targetBox.Parent = frame
+
+local valueBox = Instance.new("TextBox")
+valueBox.Size = UDim2.new(1, -20, 0, 35)
+valueBox.Position = UDim2.new(0, 10, 0, 95)
+valueBox.PlaceholderText = "Value / item / reason"
+valueBox.Text = ""
+valueBox.TextScaled = true
+valueBox.Parent = frame
+
+local function makeButton(text, y, command)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1, -20, 0, 30)
+	button.Position = UDim2.new(0, 10, 0, y)
+	button.Text = text
+	button.TextScaled = true
+	button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.Parent = frame
+
+	button.MouseButton1Click:Connect(function()
+		remote:FireServer(command, targetBox.Text, valueBox.Text)
+	end)
+end
+
+makeButton("Kick", 140, "Kick")
+makeButton("Teleport To Player", 175, "TeleportToPlayer")
+makeButton("Set Level", 210, "SetLevel")
+makeButton("Give Item", 245, "GiveItem")
+
+local openButton = Instance.new("TextButton")
+openButton.Size = UDim2.new(0, 120, 0, 35)
+openButton.Position = UDim2.new(0, 20, 0, 20)
+openButton.Text = "Admin"
+openButton.TextScaled = true
+openButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+openButton.TextColor3 = Color3.new(1, 1, 1)
+openButton.Parent = gui
+
+openButton.MouseButton1Click:Connect(function()
+	frame.Visible = not frame.Visible
+end)
