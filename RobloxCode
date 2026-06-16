@@ -1,0 +1,374 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
+local DataStoreService = game:GetService("DataStoreService")
+
+local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+local updateGamepasses = remoteEvents:WaitForChild("UpdateGamepasses")
+local ShopInfo = require(ReplicatedStorage:WaitForChild("ShopInfo"))
+local purchaseHistory = DataStoreService:GetDataStore("PurchaseHistoryV3")
+
+local function getOrCreateRemote(name)
+	local remote = ReplicatedStorage:FindFirstChild(name)
+	if not remote then
+		remote = Instance.new("RemoteEvent")
+		remote.Name = name
+		remote.Parent = ReplicatedStorage
+	end
+	return remote
+end
+
+local rewardPopupEvent = getOrCreateRemote("RewardPopupEvent")
+
+local function showRewardPopup(player, text, amount)
+	local success, result = pcall(function()
+		rewardPopupEvent:FireClient(player, text, amount or 0)
+	end)
+	if not success and not string.find(tostring(result), "Sandboxed", 1, true) then
+		warn("[Main] Failed to fire reward popup: " .. tostring(result))
+	end
+end
+
+local function addMoney(player, amount, popupText)
+	local hiddenStats = player:FindFirstChild("HiddenStats")
+	local money = hiddenStats and hiddenStats:FindFirstChild("Money")
+	if not money then
+		return false
+	end
+
+	money.Value += amount
+	local displayMoney = player:FindFirstChild("Money")
+	if displayMoney then
+		displayMoney.Value = money.Value
+	end
+	if popupText then
+		showRewardPopup(player, popupText, amount)
+	end
+	return true
+end
+
+local function skipStages(player, amount)
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local level = leaderstats and leaderstats:FindFirstChild("Level")
+	local hiddenStats = player:FindFirstChild("HiddenStats")
+	local maxLevel = hiddenStats and hiddenStats:FindFirstChild("MaxLevel")
+	local checkpoints = workspace:FindFirstChild("Checkpoints")
+	local character = player.Character
+	if not level or not checkpoints or not character then
+		return false
+	end
+
+	local newLevel = level.Value + amount
+	local checkpoint = checkpoints:FindFirstChild("Checkpoint " .. newLevel)
+
+	level.Value = newLevel
+	if maxLevel and newLevel > maxLevel.Value then
+		maxLevel.Value = newLevel
+	end
+	if checkpoint and checkpoint:IsA("BasePart") then
+		character:MoveTo(checkpoint.Position + Vector3.new(0, 4, 0))
+	end
+	return true
+end
+
+local function attachHealthProtection(player, humanoid)
+	local hiddenStats = player:FindFirstChild("HiddenStats")
+	local invincibleUntil = hiddenStats and hiddenStats:FindFirstChild("InvincibleUntil")
+	if not invincibleUntil then
+		return
+	end
+
+	humanoid.HealthChanged:Connect(function()
+		if invincibleUntil.Value > os.time() and humanoid.Health < humanoid.MaxHealth then
+			humanoid.Health = humanoid.MaxHealth
+		end
+	end)
+end
+
+local function grantInvincibility(player, duration)
+	local hiddenStats = player:FindFirstChild("HiddenStats")
+	local invincibleUntil = hiddenStats and hiddenStats:FindFirstChild("InvincibleUntil")
+	if not invincibleUntil then
+		return false
+	end
+
+	invincibleUntil.Value = os.time() + duration
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid:SetAttribute("Invincible", true)
+		humanoid.Health = humanoid.MaxHealth
+		attachHealthProtection(player, humanoid)
+		task.delay(duration, function()
+			if player.Parent and invincibleUntil.Value <= os.time() then
+				local currentCharacter = player.Character
+				local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+				if currentHumanoid then
+					currentHumanoid:SetAttribute("Invincible", false)
+				end
+			end
+		end)
+	end
+	return true
+end
+
+local function getTrailStyle(styleName)
+	local styles = ShopInfo.VIPTrailStyles or {}
+	local style = styles[tostring(styleName or "")]
+	return style or styles.Gold or {
+		ColorA = Color3.fromRGB(255, 216, 74),
+		ColorB = Color3.fromRGB(255, 121, 72),
+	}
+end
+
+local function applyVipVisuals(player, character)
+	if not player:GetAttribute("VIP") then
+		return
+	end
+
+	if not player:GetAttribute("VIPTrailStyle") then
+		player:SetAttribute("VIPTrailStyle", "Gold")
+	end
+
+	local head = character:FindFirstChild("Head")
+	if head and not head:FindFirstChild("VIPTag") then
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = "VIPTag"
+		billboard.Size = UDim2.fromOffset(110, 32)
+		billboard.StudsOffset = Vector3.new(0, 2.8, 0)
+		billboard.AlwaysOnTop = true
+		billboard.Parent = head
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBold
+		label.Text = "VIP"
+		label.TextColor3 = Color3.fromRGB(255, 216, 74)
+		label.TextStrokeTransparency = 0.25
+		label.TextScaled = true
+		label.Parent = billboard
+	end
+
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local attachment0 = rootPart:FindFirstChild("VIPTrailTop")
+	if not attachment0 then
+		attachment0 = Instance.new("Attachment")
+		attachment0.Name = "VIPTrailTop"
+		attachment0.Position = Vector3.new(0, 1.8, 0)
+		attachment0.Parent = rootPart
+	end
+
+	local attachment1 = rootPart:FindFirstChild("VIPTrailBottom")
+	if not attachment1 then
+		attachment1 = Instance.new("Attachment")
+		attachment1.Name = "VIPTrailBottom"
+		attachment1.Position = Vector3.new(0, -1.8, 0)
+		attachment1.Parent = rootPart
+	end
+
+	local trail = rootPart:FindFirstChild("VIPTrail")
+	if not trail then
+		trail = Instance.new("Trail")
+		trail.Name = "VIPTrail"
+		trail.Attachment0 = attachment0
+		trail.Attachment1 = attachment1
+		trail.Lifetime = 0.65
+		trail.LightEmission = 0.6
+		trail.MinLength = 0.1
+		trail.Parent = rootPart
+	end
+
+	local style = getTrailStyle(player:GetAttribute("VIPTrailStyle"))
+	trail.Color = ColorSequence.new(style.ColorA, style.ColorB)
+end
+
+local function getMoneyProduct(productId)
+	for _, product in ShopInfo.Products do
+		if product.ID == productId and product.Reward then
+			return product
+		end
+	end
+	return nil
+end
+
+local function getProductById(productId)
+	for _, product in ShopInfo.Products do
+		if product.ID == productId then
+			return product
+		end
+	end
+	return nil
+end
+
+local function applyGamepassBenefits(player)
+	local hiddenStats = player:FindFirstChild("HiddenStats")
+	if not hiddenStats then
+		return
+	end
+
+	local hasVip = hiddenStats:FindFirstChild("HasVIP")
+	local hasDoubleJump = hiddenStats:FindFirstChild("HasDoubleJump")
+	local alreadyVip = hasVip and hasVip.Value
+	local alreadyDoubleJump = hasDoubleJump and hasDoubleJump.Value
+	local vipInfo = ShopInfo.Gamepasses.VIP
+	local doubleJumpInfo = ShopInfo.Gamepasses.DoubleJump
+
+	if vipInfo and vipInfo.ID and vipInfo.ID ~= 0 then
+		local ownsVip = false
+		local success, result = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, vipInfo.ID)
+		end)
+		if success then
+			ownsVip = result
+		end
+		if hasVip then
+			hasVip.Value = ownsVip
+		end
+		player:SetAttribute("VIP", ownsVip)
+		if ownsVip and not player:GetAttribute("VIPTrailStyle") then
+			player:SetAttribute("VIPTrailStyle", "Gold")
+		end
+		if ownsVip and player.Character then
+			applyVipVisuals(player, player.Character)
+		end
+		if ownsVip and not alreadyVip then
+			showRewardPopup(player, "VIP Tag + Special Trail unlocked!", 0)
+		end
+	end
+
+	if doubleJumpInfo and doubleJumpInfo.ID and doubleJumpInfo.ID ~= 0 then
+		local ownsDoubleJump = false
+		local success, result = pcall(function()
+			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, doubleJumpInfo.ID)
+		end)
+		if success then
+			ownsDoubleJump = result
+		end
+		if ownsDoubleJump and hasDoubleJump then
+			hasDoubleJump.Value = true
+		end
+		if ownsDoubleJump and not alreadyDoubleJump then
+			showRewardPopup(player, "Double Jump unlocked!", 0)
+		end
+	end
+end
+
+local productHandlers = {}
+local skipStageProduct = ShopInfo.Products.SkipStage
+if skipStageProduct and skipStageProduct.ID and skipStageProduct.ID ~= 0 then
+	productHandlers[skipStageProduct.ID] = function(player)
+		return skipStages(player, 1)
+	end
+end
+
+local skip10Product = ShopInfo.Products.Skip10Stages
+if skip10Product and skip10Product.ID and skip10Product.ID ~= 0 then
+	productHandlers[skip10Product.ID] = function(player)
+		return skipStages(player, 10)
+	end
+end
+
+local invincibilityProduct = ShopInfo.Products.Invincibility5Minutes
+if invincibilityProduct and invincibilityProduct.ID and invincibilityProduct.ID ~= 0 then
+	productHandlers[invincibilityProduct.ID] = function(player)
+		local granted = grantInvincibility(player, invincibilityProduct.Duration or 300)
+		if granted then
+			showRewardPopup(player, "Invincibility active for 5 minutes!", 0)
+		end
+		return granted
+	end
+end
+
+local function processReceipt(receiptInfo)
+	local purchaseKey = receiptInfo.PlayerId .. "_" .. receiptInfo.PurchaseId
+	local historySuccess, historyResult = pcall(function()
+		return purchaseHistory:GetAsync(purchaseKey)
+	end)
+	if historySuccess and historyResult then
+		return Enum.ProductPurchaseDecision.PurchaseGranted
+	end
+	if not historySuccess then
+		warn("[Main] Purchase history check failed: " .. tostring(historyResult))
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
+	if not player then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	local granted = false
+	local moneyProduct = getMoneyProduct(receiptInfo.ProductId)
+	if moneyProduct then
+		granted = addMoney(player, moneyProduct.Reward, "+$" .. tostring(moneyProduct.Reward) .. " purchased!")
+	else
+		local handler = productHandlers[receiptInfo.ProductId]
+		if handler then
+			granted = handler(player)
+		else
+			local product = getProductById(receiptInfo.ProductId)
+			warn("[Main] No receipt handler for product " .. receiptInfo.ProductId .. (product and " (" .. tostring(product.Title) .. ")" or ""))
+		end
+	end
+
+	if not granted then
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	local saveSuccess, saveResult = pcall(function()
+		purchaseHistory:SetAsync(purchaseKey, true)
+	end)
+	if not saveSuccess then
+		warn("[Main] Failed to save purchase history: " .. tostring(saveResult))
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+
+local function playerAdded(player)
+	player.CharacterAdded:Connect(function(character)
+		local hiddenStats = player:WaitForChild("HiddenStats", 20)
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		if hiddenStats and humanoid then
+			attachHealthProtection(player, humanoid)
+			local invincibleUntil = hiddenStats:FindFirstChild("InvincibleUntil")
+			if invincibleUntil and invincibleUntil.Value > os.time() then
+				humanoid:SetAttribute("Invincible", true)
+				humanoid.Health = humanoid.MaxHealth
+			end
+		end
+		applyVipVisuals(player, character)
+	end)
+
+	player:GetAttributeChangedSignal("VIPTrailStyle"):Connect(function()
+		if player.Character then
+			applyVipVisuals(player, player.Character)
+		end
+	end)
+
+	task.defer(function()
+		player:WaitForChild("HiddenStats", 20)
+		applyGamepassBenefits(player)
+		updateGamepasses:FireClient(player)
+	end)
+end
+
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gamepassId, wasPurchased)
+	if wasPurchased then
+		applyGamepassBenefits(player)
+		updateGamepasses:FireClient(player)
+	end
+end)
+
+Players.PlayerAdded:Connect(playerAdded)
+MarketplaceService.ProcessReceipt = processReceipt
+
+for _, player in Players:GetPlayers() do
+	playerAdded(player)
+end
