@@ -1,136 +1,204 @@
+-- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 local DataStoreService = game:GetService("DataStoreService")
 
+-- Remote event folder
 local remoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
+
+-- Event used to update gamepass UI
 local updateGamepasses = remoteEvents:WaitForChild("UpdateGamepasses")
+
+-- Module containing shop/gamepass information
 local ShopInfo = require(ReplicatedStorage:WaitForChild("ShopInfo"))
+
+-- DataStore used to prevent duplicate developer product rewards
 local purchaseHistory = DataStoreService:GetDataStore("PurchaseHistoryV3")
 
+-- Creates a RemoteEvent if it doesn't already exist
 local function getOrCreateRemote(name)
 	local remote = ReplicatedStorage:FindFirstChild(name)
+
 	if not remote then
 		remote = Instance.new("RemoteEvent")
 		remote.Name = name
 		remote.Parent = ReplicatedStorage
 	end
+
 	return remote
 end
 
+-- RemoteEvent used to show reward popups
 local rewardPopupEvent = getOrCreateRemote("RewardPopupEvent")
 
+-- Shows a reward popup on the player's screen
 local function showRewardPopup(player, text, amount)
 	local success, result = pcall(function()
 		rewardPopupEvent:FireClient(player, text, amount or 0)
 	end)
+
+	-- Warn if popup failed to send
 	if not success and not string.find(tostring(result), "Sandboxed", 1, true) then
 		warn("[Main] Failed to fire reward popup: " .. tostring(result))
 	end
 end
 
+-- Adds money to the player's account
 local function addMoney(player, amount, popupText)
 	local hiddenStats = player:FindFirstChild("HiddenStats")
 	local money = hiddenStats and hiddenStats:FindFirstChild("Money")
+
+	-- Stop if money stat doesn't exist
 	if not money then
 		return false
 	end
-
+	-- Add money to hidden stats
 	money.Value += amount
+
+	-- Update displayed money value if it exists
 	local displayMoney = player:FindFirstChild("Money")
 	if displayMoney then
 		displayMoney.Value = money.Value
 	end
+
+	-- Show reward popup if text was provided
 	if popupText then
 		showRewardPopup(player, popupText, amount)
 	end
+
 	return true
 end
 
+-- Moves a player forward by a certain number of stages
 local function skipStages(player, amount)
 	local leaderstats = player:FindFirstChild("leaderstats")
 	local level = leaderstats and leaderstats:FindFirstChild("Level")
+
 	local hiddenStats = player:FindFirstChild("HiddenStats")
 	local maxLevel = hiddenStats and hiddenStats:FindFirstChild("MaxLevel")
+
 	local checkpoints = workspace:FindFirstChild("Checkpoints")
 	local character = player.Character
+
+	-- Stop if required objects are missing
 	if not level or not checkpoints or not character then
 		return false
 	end
 
+	-- Calculate new level
 	local newLevel = level.Value + amount
+
+	-- Find checkpoint matching the new level
 	local checkpoint = checkpoints:FindFirstChild("Checkpoint " .. newLevel)
 
+	-- Update player level
 	level.Value = newLevel
+
+	-- Save highest level reached
 	if maxLevel and newLevel > maxLevel.Value then
 		maxLevel.Value = newLevel
 	end
+
+	-- Teleport player to checkpoint if it exists
 	if checkpoint and checkpoint:IsA("BasePart") then
 		character:MoveTo(checkpoint.Position + Vector3.new(0, 4, 0))
 	end
+
 	return true
 end
 
+-- Prevents damage while invincibility is active
 local function attachHealthProtection(player, humanoid)
 	local hiddenStats = player:FindFirstChild("HiddenStats")
 	local invincibleUntil = hiddenStats and hiddenStats:FindFirstChild("InvincibleUntil")
+	-- Stop if player doesn't have an invincibility value
 	if not invincibleUntil then
 		return
 	end
 
+	-- Watch for health changes
 	humanoid.HealthChanged:Connect(function()
+
+		-- Restore full health if invincibility is active
 		if invincibleUntil.Value > os.time() and humanoid.Health < humanoid.MaxHealth then
 			humanoid.Health = humanoid.MaxHealth
 		end
 	end)
 end
 
+-- Grants temporary invincibility to a player
 local function grantInvincibility(player, duration)
 	local hiddenStats = player:FindFirstChild("HiddenStats")
 	local invincibleUntil = hiddenStats and hiddenStats:FindFirstChild("InvincibleUntil")
+
+	-- Stop if invincibility value doesn't exist
 	if not invincibleUntil then
 		return false
 	end
 
+	-- Set expiration time
 	invincibleUntil.Value = os.time() + duration
+
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
 	if humanoid then
+		-- Mark player as invincible
 		humanoid:SetAttribute("Invincible", true)
+
+		-- Heal player to full health
 		humanoid.Health = humanoid.MaxHealth
+
+		-- Start protecting health
 		attachHealthProtection(player, humanoid)
+
+		-- Remove invincibility after duration expires
 		task.delay(duration, function()
 			if player.Parent and invincibleUntil.Value <= os.time() then
 				local currentCharacter = player.Character
 				local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+
 				if currentHumanoid then
 					currentHumanoid:SetAttribute("Invincible", false)
 				end
 			end
 		end)
 	end
+
 	return true
 end
 
+-- Returns VIP trail colors based on selected style
 local function getTrailStyle(styleName)
 	local styles = ShopInfo.VIPTrailStyles or {}
+
+	-- Get the selected style
 	local style = styles[tostring(styleName or "")]
+
+	-- Return selected style or fallback to Gold
 	return style or styles.Gold or {
 		ColorA = Color3.fromRGB(255, 216, 74),
 		ColorB = Color3.fromRGB(255, 121, 72),
 	}
 end
 
+-- Applies VIP tag and trail effects to a character
 local function applyVipVisuals(player, character)
+
+	-- Only VIP players get these effects
 	if not player:GetAttribute("VIP") then
 		return
 	end
 
+	-- Set default trail style if none exists
 	if not player:GetAttribute("VIPTrailStyle") then
 		player:SetAttribute("VIPTrailStyle", "Gold")
 	end
 
 	local head = character:FindFirstChild("Head")
+
+	-- Create VIP name tag above the player's head
 	if head and not head:FindFirstChild("VIPTag") then
 		local billboard = Instance.new("BillboardGui")
 		billboard.Name = "VIPTag"
@@ -150,11 +218,14 @@ local function applyVipVisuals(player, character)
 		label.Parent = billboard
 	end
 
+	-- Get the player's root part for trail attachments
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
+
 	if not rootPart then
 		return
 	end
 
+	-- Create top trail attachment if missing
 	local attachment0 = rootPart:FindFirstChild("VIPTrailTop")
 	if not attachment0 then
 		attachment0 = Instance.new("Attachment")
@@ -163,6 +234,7 @@ local function applyVipVisuals(player, character)
 		attachment0.Parent = rootPart
 	end
 
+	-- Create bottom trail attachment if missing
 	local attachment1 = rootPart:FindFirstChild("VIPTrailBottom")
 	if not attachment1 then
 		attachment1 = Instance.new("Attachment")
@@ -171,94 +243,137 @@ local function applyVipVisuals(player, character)
 		attachment1.Parent = rootPart
 	end
 
+	-- Create trail object if it doesn't exist
 	local trail = rootPart:FindFirstChild("VIPTrail")
 	if not trail then
 		trail = Instance.new("Trail")
 		trail.Name = "VIPTrail"
+
+		-- Connect trail between both attachments
 		trail.Attachment0 = attachment0
 		trail.Attachment1 = attachment1
+
+		-- Trail settings
 		trail.Lifetime = 0.65
 		trail.LightEmission = 0.6
 		trail.MinLength = 0.1
 		trail.Parent = rootPart
 	end
 
+	-- Get player's selected trail style
 	local style = getTrailStyle(player:GetAttribute("VIPTrailStyle"))
+
+	-- Apply trail colors
 	trail.Color = ColorSequence.new(style.ColorA, style.ColorB)
 end
 
+-- Finds a developer product that rewards money
 local function getMoneyProduct(productId)
 	for _, product in ShopInfo.Products do
+
+		-- Match product ID and make sure it has a reward value
 		if product.ID == productId and product.Reward then
 			return product
 		end
 	end
+
 	return nil
 end
 
+-- Finds any product by its ID
 local function getProductById(productId)
 	for _, product in ShopInfo.Products do
 		if product.ID == productId then
 			return product
 		end
 	end
+
 	return nil
 end
-
+-- Checks what gamepasses the player owns and applies rewards
 local function applyGamepassBenefits(player)
 	local hiddenStats = player:FindFirstChild("HiddenStats")
+
+	-- Stop if stats haven't loaded yet
 	if not hiddenStats then
 		return
 	end
 
 	local hasVip = hiddenStats:FindFirstChild("HasVIP")
 	local hasDoubleJump = hiddenStats:FindFirstChild("HasDoubleJump")
+
+	-- Store previous ownership values
 	local alreadyVip = hasVip and hasVip.Value
 	local alreadyDoubleJump = hasDoubleJump and hasDoubleJump.Value
+
+	-- Get gamepass info from ShopInfo
 	local vipInfo = ShopInfo.Gamepasses.VIP
 	local doubleJumpInfo = ShopInfo.Gamepasses.DoubleJump
 
+	-- VIP gamepass check
 	if vipInfo and vipInfo.ID and vipInfo.ID ~= 0 then
 		local ownsVip = false
+
+		-- Safely check ownership
 		local success, result = pcall(function()
 			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, vipInfo.ID)
 		end)
+
 		if success then
 			ownsVip = result
 		end
+
+		-- Save ownership status
 		if hasVip then
 			hasVip.Value = ownsVip
 		end
+
 		player:SetAttribute("VIP", ownsVip)
+
+		-- Give default VIP trail style
 		if ownsVip and not player:GetAttribute("VIPTrailStyle") then
 			player:SetAttribute("VIPTrailStyle", "Gold")
 		end
+
+		-- Apply VIP effects immediately
 		if ownsVip and player.Character then
 			applyVipVisuals(player, player.Character)
 		end
+
+		-- Show unlock popup only the first time
 		if ownsVip and not alreadyVip then
 			showRewardPopup(player, "VIP Tag + Special Trail unlocked!", 0)
 		end
 	end
 
+	-- Double Jump gamepass check
 	if doubleJumpInfo and doubleJumpInfo.ID and doubleJumpInfo.ID ~= 0 then
 		local ownsDoubleJump = false
+
+		-- Safely check ownership
 		local success, result = pcall(function()
 			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, doubleJumpInfo.ID)
 		end)
+
 		if success then
 			ownsDoubleJump = result
 		end
+		-- Save double jump ownership
 		if ownsDoubleJump and hasDoubleJump then
 			hasDoubleJump.Value = true
 		end
+
+		-- Show unlock popup only the first time
 		if ownsDoubleJump and not alreadyDoubleJump then
 			showRewardPopup(player, "Double Jump unlocked!", 0)
 		end
 	end
 end
 
+-- Holds developer product reward functions
 local productHandlers = {}
+
+-- Skip 1 stage product
 local skipStageProduct = ShopInfo.Products.SkipStage
 if skipStageProduct and skipStageProduct.ID and skipStageProduct.ID ~= 0 then
 	productHandlers[skipStageProduct.ID] = function(player)
@@ -266,6 +381,7 @@ if skipStageProduct and skipStageProduct.ID and skipStageProduct.ID ~= 0 then
 	end
 end
 
+-- Skip 10 stages product
 local skip10Product = ShopInfo.Products.Skip10Stages
 if skip10Product and skip10Product.ID and skip10Product.ID ~= 0 then
 	productHandlers[skip10Product.ID] = function(player)
@@ -273,102 +389,168 @@ if skip10Product and skip10Product.ID and skip10Product.ID ~= 0 then
 	end
 end
 
+-- 5 minute invincibility product
 local invincibilityProduct = ShopInfo.Products.Invincibility5Minutes
 if invincibilityProduct and invincibilityProduct.ID and invincibilityProduct.ID ~= 0 then
 	productHandlers[invincibilityProduct.ID] = function(player)
+
+		-- Give the player invincibility
 		local granted = grantInvincibility(player, invincibilityProduct.Duration or 300)
+
+		-- Show popup if it worked
 		if granted then
 			showRewardPopup(player, "Invincibility active for 5 minutes!", 0)
 		end
+
 		return granted
 	end
 end
 
+-- Handles developer product purchases
 local function processReceipt(receiptInfo)
+
+	-- Unique key for this purchase
 	local purchaseKey = receiptInfo.PlayerId .. "_" .. receiptInfo.PurchaseId
+
+	-- Check if this purchase was already rewarded
 	local historySuccess, historyResult = pcall(function()
 		return purchaseHistory:GetAsync(purchaseKey)
 	end)
+	-- If purchase was already processed, grant immediately
 	if historySuccess and historyResult then
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
+
+	-- Retry later if datastore check failed
 	if not historySuccess then
 		warn("[Main] Purchase history check failed: " .. tostring(historyResult))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
+	-- Get the player who made the purchase
 	local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
+
+	-- Wait until player is in-game
 	if not player then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
 	local granted = false
+
+	-- Check if product is a money reward
 	local moneyProduct = getMoneyProduct(receiptInfo.ProductId)
+
 	if moneyProduct then
-		granted = addMoney(player, moneyProduct.Reward, "+$" .. tostring(moneyProduct.Reward) .. " purchased!")
+		-- Give player money reward
+		granted = addMoney(
+			player,
+			moneyProduct.Reward,
+			"+$" .. tostring(moneyProduct.Reward) .. " purchased!"
+		)
 	else
+		-- Look for a custom reward handler
 		local handler = productHandlers[receiptInfo.ProductId]
+
 		if handler then
 			granted = handler(player)
 		else
+			-- Warn if no reward handler exists
 			local product = getProductById(receiptInfo.ProductId)
-			warn("[Main] No receipt handler for product " .. receiptInfo.ProductId .. (product and " (" .. tostring(product.Title) .. ")" or ""))
+
+			warn(
+				"[Main] No receipt handler for product "
+				.. receiptInfo.ProductId
+				.. (product and " (" .. tostring(product.Title) .. ")" or "")
+			)
 		end
 	end
 
+	-- Tell Roblox to retry if reward failed
 	if not granted then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
+	-- Save purchase so it can't be claimed twice
 	local saveSuccess, saveResult = pcall(function()
 		purchaseHistory:SetAsync(purchaseKey, true)
 	end)
+
+	-- Retry if save failed
 	if not saveSuccess then
 		warn("[Main] Failed to save purchase history: " .. tostring(saveResult))
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
+	-- Purchase completed successfully
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
+-- Runs when a player joins
 local function playerAdded(player)
+	-- Runs whenever the player's character spawns
 	player.CharacterAdded:Connect(function(character)
+
+		-- Wait for player stats to load
 		local hiddenStats = player:WaitForChild("HiddenStats", 20)
+
+		-- Wait for humanoid to load
 		local humanoid = character:WaitForChild("Humanoid", 10)
+
 		if hiddenStats and humanoid then
+
+			-- Reattach invincibility protection after respawn
 			attachHealthProtection(player, humanoid)
+
 			local invincibleUntil = hiddenStats:FindFirstChild("InvincibleUntil")
+
+			-- Restore invincibility if timer is still active
 			if invincibleUntil and invincibleUntil.Value > os.time() then
 				humanoid:SetAttribute("Invincible", true)
 				humanoid.Health = humanoid.MaxHealth
 			end
 		end
+
+		-- Reapply VIP visuals after respawn
 		applyVipVisuals(player, character)
 	end)
 
+	-- Update trail colors when player changes VIP trail style
 	player:GetAttributeChangedSignal("VIPTrailStyle"):Connect(function()
 		if player.Character then
 			applyVipVisuals(player, player.Character)
 		end
 	end)
 
+	-- Check owned gamepasses after player loads
 	task.defer(function()
 		player:WaitForChild("HiddenStats", 20)
+
 		applyGamepassBenefits(player)
+
+		-- Refresh shop UI
 		updateGamepasses:FireClient(player)
 	end)
 end
 
+-- Runs after a gamepass purchase finishes
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gamepassId, wasPurchased)
+
+	-- Only update if purchase succeeded
 	if wasPurchased then
 		applyGamepassBenefits(player)
+
+		-- Refresh gamepass buttons/UI
 		updateGamepasses:FireClient(player)
 	end
 end)
 
+-- Run player setup whenever someone joins
 Players.PlayerAdded:Connect(playerAdded)
+
+-- Register developer product receipt handler
 MarketplaceService.ProcessReceipt = processReceipt
 
+-- Handle players already in the server when the script starts
 for _, player in Players:GetPlayers() do
 	playerAdded(player)
 end
